@@ -18,7 +18,7 @@
 #include "buffer/dstore_buf_table.h"
 #include "framework/dstore_instance.h"
 #include "common/dstore_datatype.h"
-
+#include "common/fault_injection/dstore_buf_fault_injection.h"
 namespace DSTORE {
 
 /* entry for buffer lookup hashtable */
@@ -104,6 +104,7 @@ RETRY:
 
     BufferDesc *bufferDesc = result->buffer;
     if (STORAGE_VAR_NULL(bufferDesc)) {
+        FAULT_INJECTION_RETURN(DstoreBufMgrFI::BUFTABLE_INSERT_SYNC3, bufferDesc);
         goto RETRY;
     }
 
@@ -111,6 +112,7 @@ RETRY:
 
     if (bufferDesc->bufTag != *bufTag) {
         bufferDesc->Unpin();
+        FAULT_INJECTION_RETURN(DstoreBufMgrFI::BUFTABLE_INSERT_SYNC4, bufferDesc);
         goto RETRY;
     }
 
@@ -140,8 +142,9 @@ BufferDesc* BufTable::Insert(const BufferTag *bufTag, uint32 hashCode, BufferDes
         StorageAssert(result->buffer != INVALID_BUFFER_DESC);
         return result->buffer;
     }
+    FAULT_INJECTION_WAIT(DstoreBufMgrFI::BUFTABLE_INSERT_SYNC4);
     result->buffer = bufferDesc;
-
+    FAULT_INJECTION_NOTIFY(DstoreBufMgrFI::BUFTABLE_INSERT_SYNC5);
     return INVALID_BUFFER_DESC;
 }
 

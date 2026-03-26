@@ -81,7 +81,15 @@ while [ $# -gt 0 ]; do
             ;;
         -vb|--verbose)
             VERBOSE="VERBOSE=1"
-            shift 
+            shift
+            ;;
+        -tm|--test_mode)
+            if [ "$2"X = X ]; then
+                echo "[ERROR]no test mode provided, expected: ut/fuzz/perf/tpcc/lcov"
+                exit 1
+            fi
+            test_mode=$2
+            shift 2
             ;;
         -h|--help)
             print_help

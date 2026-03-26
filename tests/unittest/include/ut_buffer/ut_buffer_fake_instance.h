@@ -130,7 +130,7 @@ public:
         g_storageInstance = this;
         g_storageInstance->InitWorkingVersionNum(&GRAND_VERSION_NUM);
         (void)CreateMemMgr();
-        thrd = DstoreNew(GetMemoryMgr()->GetGroupContext(DSTORE::MEMORY_CONTEXT_LONGLIVE)) ThreadContext();
+        thrd = dynamic_cast<ThreadContext *>(ThreadContextInterface::Create());
         (void)thrd->InitializeBasic();
         auto *sc = CreateStorageSession(1ULL);
         thrd->AttachSessionToThread(sc);

@@ -90,12 +90,12 @@ protected:
         }
     }
 
-    static void ReadNormalBuf(const FaultInjectionEntry *entry, PageId* pageId)
+    static void ReadNormalBuf(const FaultInjectionEntry *entry, PageId pageId)
     {
         StorageAssert(g_tmpbufPool != nullptr);
         FAULT_INJECTION_INACTIVE(DstoreBufMgrFI::BUFRING_REUSE_BUF_IN_HASHTABLE, FI_GLOBAL);
         BufMgrInterface *bufferPool = g_tmpbufPool;
-        BufferDesc *buffer = bufferPool->Read(g_defaultPdbId, *pageId, LW_SHARED);
+        BufferDesc *buffer = bufferPool->Read(g_defaultPdbId, pageId, LW_SHARED);
         bufferPool->UnlockAndRelease(buffer);
     }
 

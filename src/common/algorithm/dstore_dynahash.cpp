@@ -28,6 +28,7 @@
 #include "framework/dstore_thread.h"
 #include "buffer/dstore_buf.h"
 #include "fault_injection/fault_injection.h"
+#include "common/fault_injection/dstore_buf_fault_injection.h"
 #include "securec.h"
 namespace DSTORE {
 
@@ -1631,7 +1632,9 @@ void* BufLookUp(HTAB* hashp,  const BufferTag* keyPtr, uint32 hashvalue, bool* f
         case HASH_REMOVE: {
             if (currBucket != nullptr) {
                 *static_cast<BufferTag*>(static_cast<void*>(ELEMENTKEY(currBucket))) = INVALID_BUFFER_TAG;
+                FAULT_INJECTION_NOTIFY(DstoreBufMgrFI::BUFTABLE_REMOVE_SYNC1);
                 GS_MEMORY_BARRIER();
+                FAULT_INJECTION_WAIT(DstoreBufMgrFI::BUFTABLE_REMOVE_SYNC2);
                 /* remove record from hash bucket's chain. */
                 *prevBucketPtr = currBucket->link;
 
@@ -1677,9 +1680,12 @@ void* BufLookUp(HTAB* hashp,  const BufferTag* keyPtr, uint32 hashvalue, bool* f
             /* copy key into record */
             currBucket->hashvalue = hashvalue;
             *static_cast<BufferTag*>(static_cast<void*>(ELEMENTKEY(currBucket))) = *keyPtr;
+            FAULT_INJECTION_NOTIFY(DstoreBufMgrFI::BUFTABLE_INSERT_SYNC1);
             GS_MEMORY_BARRIER();
+            FAULT_INJECTION_WAIT(DstoreBufMgrFI::BUFTABLE_INSERT_SYNC2);
             /* link into hashbucket chain */
             *prevBucketPtr = currBucket;
+            FAULT_INJECTION_NOTIFY(DstoreBufMgrFI::BUFTABLE_INSERT_SYNC3);
 
             /*
              * Caller is expected to fill the data field on return.

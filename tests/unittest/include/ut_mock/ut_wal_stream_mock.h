@@ -52,7 +52,7 @@ namespace DSTORE
             return result;
         }
 
-        void WaitTargetPlsnPersist(uint64 targetPlsn, bool forceSync = false)
+        void WaitTargetPlsnPersist(uint64 targetPlsn)
         {
             while (m_flushPLsn < targetPlsn) {
                 GaussUsleep(1000);

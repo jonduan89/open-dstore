@@ -49,6 +49,7 @@
 #include "buffer/dstore_buf_mgr.h"
 #include "buffer/dstore_checkpointer.h"
 #include "common/fault_injection/dstore_heap_fault_injection.h"
+#include "common/fault_injection/dstore_buf_fault_injection.h"
 #include "fault_injection/fault_injection.h"
 #include "common/error/dstore_error.h"
 
@@ -427,6 +428,7 @@ RetStatus BufMgr::ReadBlock(BufferTag bufTag, BufBlock block)
 READ:
     /* 1. read from vfs */
     PageId pageId = bufTag.pageId;
+    FAULT_INJECTION_CALL_REPLACE(DstoreBufMgrFI::READ_BLOCK_FAULT, &pageId, &ret);
     if (unlikely(g_storageInstance->GetGuc()->enableTrackIOTiming)) {
         INSTR_TIME_SET_CURRENT(ioStart);
     }
@@ -439,6 +441,7 @@ READ:
         INSTR_TIME_SUBTRACT(ioTime, ioStart);
         stat->ReportBufferReadTime(ioTime);
     }
+    FAULT_INJECTION_CALL_REPLACE_END;
     if (STORAGE_FUNC_FAIL(ret)) {
         ErrorCode err = StorageGetErrorCode();
         if (err == VFS_WARNING_FILE_NOT_OPENED) {
@@ -1092,6 +1095,7 @@ RetStatus BufMgr::WriteBlock(BufferDesc *bufferDesc)
 WRITE:
     stat->m_reportWaitEvent(
         static_cast<uint32_t>(GsStatWaitEvent::WAIT_EVENT_BUFFER_WRITE_PAGE_SYNC));
+    FAULT_INJECTION_CALL_REPLACE(DstoreBufMgrFI::WRITE_BLOCK_FAULT, &pageId, &ret);
     if (STORAGE_FUNC_FAIL(vfs->WritePageSync(pageId, bufferDesc->GetPage()))) {
         stat->m_reportWaitEvent(static_cast<uint32_t>(OPTUTIL_GSSTAT_WAIT_EVENT_END));
         ErrorCode err = StorageGetErrorCode();
@@ -1121,6 +1125,7 @@ WRITE:
                 bufTag.pdbId, bufTag.pageId.m_fileId, bufTag.pageId.m_blockId,
                 bufferDesc->GetPage()->GetWalId(), bufferDesc->GetPage()->GetGlsn(), bufferDesc->GetPage()->GetPlsn()));
     }
+    FAULT_INJECTION_CALL_REPLACE_END;
 
     /* Step 5: Release IO lock. */
     /*
@@ -1234,6 +1239,7 @@ RetStatus BufMgr::WriteBlockAsync(BufferDesc *bufferDesc, void *aioCtx)
 ASYNC_WRITE:
     stat->m_reportWaitEvent(
         static_cast<uint32_t>(GsStatWaitEvent::WAIT_EVENT_BUFFER_WRITE_PAGE_ASYNC));
+    FAULT_INJECTION_CALL_REPLACE(DstoreBufMgrFI::WRITE_BLOCK_FAULT, &(bufTag.pageId), &ret);
     if (STORAGE_FUNC_FAIL(vfs->WritePageAsync(bufTag.pageId, page, (const AsyncIoContext *)aioCtx))) {
         stat->m_reportWaitEvent(static_cast<uint32_t>(OPTUTIL_GSSTAT_WAIT_EVENT_END));
         ErrorCode err = StorageGetErrorCode();
@@ -1252,6 +1258,7 @@ ASYNC_WRITE:
         }
         batchCtxMgr->SubOneInProgressPage();
     }
+    FAULT_INJECTION_CALL_REPLACE_END;
 
     if (STORAGE_FUNC_SUCC(ret)) {
         stat->m_reportWaitEvent(static_cast<uint32_t>(OPTUTIL_GSSTAT_WAIT_EVENT_END));
@@ -1443,6 +1450,7 @@ RetStatus BufMgr::FlushAll(bool isBootstrap, bool onlyOwnedByMe, PdbId pdbId)
 
 RetStatus BufMgr::TryFlush(BufferDesc *bufferDesc)
 {
+    FAULT_INJECTION_RETURN(DstoreBufMgrFI::BUFRING_TRY_FLUSH_FAIL, DSTORE_FAIL);
     RetStatus ret = DSTORE_SUCC;
     uint64 state = bufferDesc->GetState();
     if (state & Buffer::BUF_CONTENT_DIRTY) {
@@ -2790,6 +2798,7 @@ EXIT:
 
 bool BufMgr::MakeCrBufferFree(BufferDesc *crBufferDesc)
 {
+    FAULT_INJECTION_RETURN(DstoreBufMgrFI::BUFRING_MAKE_CR_FREE_FAIL, false);
     StorageAssert(crBufferDesc != nullptr);
     StorageAssert(crBufferDesc->IsCrPage());
     BufferDesc *baseBufferDesc = crBufferDesc->GetCrBaseBuffer();
@@ -2858,6 +2867,7 @@ bool BufMgr::ReuseCrBufferForBasePage(const BufferTag &bufTag, BufferDesc *freeB
     StorageAssert(freeBuffer != INVALID_BUFFER_DESC);
     StorageAssert(freeBuffer->IsCrPage());
 
+    FAULT_INJECTION_CALL(DstoreBufMgrFI::BUFRING_REUSE_BUF_IN_HASHTABLE, bufTag.pageId);
 
     /* acquire BufMapping lock */
     uint32 hashCode = m_buftable->GetHashCode(&bufTag);
@@ -2932,6 +2942,7 @@ bool BufMgr::ReuseCrBufferForBasePage(const BufferTag &bufTag, BufferDesc *freeB
 bool BufMgr::IsBaseBufferReusable(const uint64 bufState, BufferDesc *candidateBuffer, const PrivateRefCountEntry *ref,
                                   PdbId newPdbId)
 {
+    FAULT_INJECTION_RETURN(DstoreBufMgrFI::BUFRING_BASE_UNABLE_REUSE, false);
     if (candidateBuffer->GetRefcount() == 1 && ref != nullptr && ref->refcount == 1 &&
         !(bufState & Buffer::BUF_CONTENT_DIRTY) && (!candidateBuffer->HasCrBuffer())) {
         return IsBufferReusableByCurrentPdb(candidateBuffer, newPdbId);
@@ -3013,6 +3024,8 @@ bool BufMgr::ReuseBaseBufferForBasePage(const BufferTag &bufTag, BufferDesc *can
         return false;
     }
 
+    FAULT_INJECTION_CALL(DstoreBufMgrFI::BUFRING_REUSE_BUF_IN_HASHTABLE, bufTag.pageId);
+
     /* Step 2: Lock partitions of hash table as needed. If the candidate buffer of old page is in hash table,
      * we need remove it from hash table later, so we must first lock the partition of hash table where the old page
      * is located. If the candidate buffer is not in hash table, we just need lock the partition of hash table
@@ -3027,6 +3040,7 @@ bool BufMgr::ReuseBaseBufferForBasePage(const BufferTag &bufTag, BufferDesc *can
         m_buftable->LockBufMapping(newHashCode, LW_EXCLUSIVE);
     }
 
+    FAULT_INJECTION_CALL(DstoreBufMgrFI::BUFRING_REUSE_DIRTY_BUF, candidateBuffer->GetPageId());
 
     bufState = candidateBuffer->LockHdr();
 
@@ -3098,6 +3112,7 @@ bool BufMgr::ReuseBaseBufferForBasePage(const BufferTag &bufTag, BufferDesc *can
             EvictBaseBufferCallback(evictedBuftag, evictedBufState, timestamp);
             return true;
         } else {
+            FAULT_INJECTION_INACTIVE(DstoreBufMgrFI::BUFRING_BASE_UNABLE_REUSE, FI_GLOBAL);
             /* Step 5: The buffer can not be reused now, release anything what we hold, and prepare try again. */
 
             /* reuse fails, the buffer is dirty again, delete it from the ring. */
@@ -3389,6 +3404,7 @@ bool BufMgr::ReuseBaseBufferForCrPage(BufferDesc *baseBufferDesc, BufferDesc *ca
         m_buftable->LockBufMapping(hashCode, LW_EXCLUSIVE);
     }
 
+    FAULT_INJECTION_CALL(DstoreBufMgrFI::BUFRING_REUSE_DIRTY_BUF, candidateBufferDesc->GetPageId());
 
     bufState = candidateBufferDesc->LockHdr();
 
@@ -3437,6 +3453,9 @@ bool BufMgr::ReuseBaseBufferForCrPage(BufferDesc *baseBufferDesc, BufferDesc *ca
         EvictBaseBufferCallback(evictedBuftag, evictedBufState, timestamp);
         return true;
     }
+
+    FAULT_INJECTION_INACTIVE(DstoreBufMgrFI::BUFRING_BASE_UNABLE_REUSE, FI_GLOBAL);
+
     /* reuse fails, the buffer is dirty again, delete it from the ring. */
     if (bufRing != nullptr && (bufState & Buffer::BUF_CONTENT_DIRTY)) {
         bufRing->RemoveBufInRing(candidateBufferDesc);
@@ -3876,6 +3895,8 @@ void BatchBufferAioContextMgr::FsyncBatch()
 void BatchBufferAioContextMgr::CallbackForAioBatchFlushBuffers(ErrorCode errorCode,
     int64_t successSize, void *asyncContext)
 {
+    FAULT_INJECTION_WAIT(DstoreBufMgrFI::ASYNC_FLUSH_WAIT);
+    FAULT_INJECTION_INACTIVE(DstoreBufMgrFI::ASYNC_FLUSH_WAIT, FI_GLOBAL);
     BufferAioContext *bufferAioContext = static_cast<BufferAioContext *>(asyncContext);
     BatchBufferAioContextMgr *batchCtxMgr =
         static_cast<BatchBufferAioContextMgr *>(bufferAioContext->batchCtxMgr);

@@ -72,7 +72,6 @@ function build_dstore()
     log "[INFO] Build directory:${build_path}"
     export DEBUG_TYPE=${compile_mode}
 
-    cmake_build_opt=" -DENABLE_TEST=OFF"
     cmake_build_opt+=" -DLOCAL_LIB_PATH=${LOCAL_LIB_PATH}"
 
     if [ "${test_mode}"X = "ut"X ]; then
