@@ -1,0 +1,88 @@
+name: DStore Unit Tests
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  ut:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/developdstore/open-dstore-ci:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    defaults:
+      run:
+        shell: bash
+
+    env:
+      BUILD_ROOT: ${{ github.workspace }}
+      LOCAL_LIB_PATH: /opt/project/local_libs
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build utils
+        run: |
+          source ${BUILD_ROOT}/buildenv
+          cd ${BUILD_ROOT}/utils
+          bash build.sh -m release
+
+      - name: Build dstore (debug with UT)
+        run: |
+          source ${BUILD_ROOT}/buildenv
+          cd ${BUILD_ROOT}
+          mkdir -p tmp_build && cd tmp_build
+          cmake .. -DCMAKE_BUILD_TYPE=debug -DUTILS_PATH=../utils/output -DENABLE_UT=ON
+          make -sj$(nproc) install
+
+      - name: "UT: Buffer"
+        run: |
+          source ${BUILD_ROOT}/buildenv
+          cd ${BUILD_ROOT}/tmp_build
+          make run_dstore_buffer_unittest
+
+      - name: "UT: Transaction"
+        run: |
+          source ${BUILD_ROOT}/buildenv
+          cd ${BUILD_ROOT}/tmp_build
+          make run_dstore_xact_unittest
+
+      - name: "UT: Index"
+        run: |
+          source ${BUILD_ROOT}/buildenv
+          cd ${BUILD_ROOT}/tmp_build
+          make run_dstore_index_unittest
+
+      - name: "UT: Lock"
+        run: |
+          source ${BUILD_ROOT}/buildenv
+          cd ${BUILD_ROOT}/tmp_build
+          make run_dstore_lock_unittest
+
+      - name: "UT: HA (WAL/Recovery)"
+        run: |
+          source ${BUILD_ROOT}/buildenv
+          cd ${BUILD_ROOT}/tmp_build
+          make run_dstore_ha_unittest
+
+      - name: "UT: Framework"
+        run: |
+          source ${BUILD_ROOT}/buildenv
+          cd ${BUILD_ROOT}/tmp_build
+          make run_dstore_framework_unittest
+
+      - name: "UT: Data Manager"
+        run: |
+          source ${BUILD_ROOT}/buildenv
+          cd ${BUILD_ROOT}/tmp_build
+          make run_dstore_datamanager_unittest
+
+      - name: "UT: Index and Undo"
+        run: |
+          source ${BUILD_ROOT}/buildenv
+          cd ${BUILD_ROOT}/tmp_build
+          make run_dstore_index_and_undo_unittest

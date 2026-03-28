@@ -1,4 +1,4 @@
-name: PR Build Check
+name: DStore Compile
 
 on:
   pull_request:
@@ -8,10 +8,14 @@ jobs:
   build:
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/${{ github.repository }}-ci:latest
+      image: ghcr.io/developdstore/open-dstore-ci:latest
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
+
+    defaults:
+      run:
+        shell: bash
 
     env:
       BUILD_ROOT: ${{ github.workspace }}
@@ -27,16 +31,30 @@ jobs:
           cd ${BUILD_ROOT}/utils
           bash build.sh -m release
 
-      - name: Build dstore
+      - name: Build dstore (release)
         run: |
           source ${BUILD_ROOT}/buildenv
           cd ${BUILD_ROOT}
           bash build.sh -m release
 
-      - name: Verify build artifacts
+      - name: Verify release artifacts
         run: |
-          echo "Checking build artifacts..."
+          echo "Checking release build artifacts..."
           test -f ${BUILD_ROOT}/utils/output/lib/libgsutils.so && echo "libgsutils.so OK" || exit 1
           test -f ${BUILD_ROOT}/output/lib/libdstore.so && echo "libdstore.so OK" || exit 1
           test -f ${BUILD_ROOT}/output/lib/libdstore.a && echo "libdstore.a OK" || exit 1
-          echo "All artifacts verified."
+          echo "Release artifacts verified."
+
+      - name: Build dstore (debug)
+        run: |
+          source ${BUILD_ROOT}/buildenv
+          cd ${BUILD_ROOT}
+          mkdir -p tmp_build && cd tmp_build
+          cmake .. -DCMAKE_BUILD_TYPE=debug -DUTILS_PATH=../utils/output -DENABLE_UT=ON
+          make -sj$(nproc) install
+
+      - name: Verify debug artifacts
+        run: |
+          echo "Checking debug build artifacts..."
+          test -d ${BUILD_ROOT}/tmp_build && echo "tmp_build directory OK" || exit 1
+          echo "Debug build verified."
